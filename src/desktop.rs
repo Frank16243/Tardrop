@@ -10,13 +10,13 @@ pub struct DesktopMetadata {
     pub source: PathBuf,
     pub name: Option<String>, pub icon: Option<String>, pub categories: Option<String>,
     pub comment: Option<String>, pub terminal: Option<bool>, pub startup_wm_class: Option<String>,
-    pub mime_type: Option<String>,
+    pub startup_notify: Option<bool>, pub mime_type: Option<String>,
 }
 
 /// Values used for TarDrop's generated launcher. The executable itself is always TarDrop-validated.
 pub struct DesktopEntry<'a> {
     pub name: &'a str, pub comment: Option<&'a str>, pub executable: &'a Path, pub icon: Option<&'a Path>,
-    pub categories: &'a str, pub terminal: bool, pub startup_wm_class: Option<&'a str>, pub mime_type: Option<&'a str>, pub id: &'a str,
+    pub categories: &'a str, pub terminal: bool, pub startup_notify: bool, pub startup_wm_class: Option<&'a str>, pub mime_type: Option<&'a str>, pub id: &'a str,
 }
 
 /// Parses fields that can enrich a generated entry. Invalid values are discarded, not propagated.
@@ -36,6 +36,7 @@ pub fn read_metadata(path: &Path) -> Option<DesktopMetadata> {
             "Categories" if valid_list(value) => metadata.categories = Some(value.to_owned()),
             "Comment" => metadata.comment = Some(value.to_owned()),
             "Terminal" => metadata.terminal = match value { "true" | "True" => Some(true), "false" | "False" => Some(false), _ => None },
+            "StartupNotify" => metadata.startup_notify = match value { "true" | "True" => Some(true), "false" | "False" => Some(false), _ => None },
             "StartupWMClass" => metadata.startup_wm_class = Some(value.to_owned()),
             "MimeType" if valid_list(value) => metadata.mime_type = Some(value.to_owned()),
             _ => {},
@@ -53,7 +54,10 @@ pub fn write(entry: DesktopEntry<'_>) -> Result<PathBuf> {
     if let Some(comment) = entry.comment { content.push_str(&format!("Comment={comment}\n")); }
     content.push_str(&format!("Exec={}\n", quote_argument(entry.executable)));
     if let Some(icon) = entry.icon { content.push_str(&format!("Icon={}\n", icon.to_string_lossy().replace('\n', ""))); }
-    content.push_str(&format!("Terminal={}\nCategories={}\nStartupNotify=true\n", entry.terminal, entry.categories));
+    // StartupNotify is true only when the packaged entry explicitly declares support. Directly
+    // launching a portable process normally cannot send the completion signal, which makes
+    // Plasma show a misleading bouncing cursor until it times out.
+    content.push_str(&format!("Terminal={}\nCategories={}\nStartupNotify={}\n", entry.terminal, entry.categories, entry.startup_notify));
     if let Some(wm_class) = entry.startup_wm_class { content.push_str(&format!("StartupWMClass={wm_class}\n")); }
     if let Some(mime_type) = entry.mime_type { content.push_str(&format!("MimeType={mime_type}\n")); }
     fs::write(&target, content).with_context(|| format!("could not write {}", target.display()))?;

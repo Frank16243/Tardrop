@@ -31,6 +31,25 @@ pub fn sanitize_name(name: &str) -> String {
     if trimmed.is_empty() { "Application".to_owned() } else { trimmed.chars().take(80).collect() }
 }
 
+/// Converts a machine-oriented executable or archive name into a readable display name.
+/// Only separator characters are rewritten, so the raw name remains available as a fallback.
+pub fn pretty_name(raw: &str) -> String {
+    let words: Vec<String> = raw
+        .split(|character: char| character == '-' || character == '_' || character.is_whitespace())
+        .filter(|word| !word.is_empty())
+        .map(capitalize_word)
+        .collect();
+    let result = words.join(" ");
+    if result.is_empty() { String::new() } else { result.chars().take(80).collect() }
+}
+
+/// Capitalizes the first character while normalising an automatically generated word.
+fn capitalize_word(word: &str) -> String {
+    let mut characters = word.chars();
+    let Some(first) = characters.next() else { return String::new(); };
+    first.to_uppercase().chain(characters.flat_map(|character| character.to_lowercase())).collect()
+}
+
 /// Ensures a calculated child stays immediately below the owned root.
 pub fn direct_child(root: &Path, name: &str) -> Result<PathBuf> {
     let candidate = root.join(name);

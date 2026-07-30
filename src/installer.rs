@@ -4,7 +4,7 @@ use std::{collections::BTreeMap, fs, path::{Component, Path, PathBuf}};
 use anyhow::{bail, Context, Result};
 use tempfile::Builder;
 use walkdir::WalkDir;
-use crate::{archive, desktop, icons, security, utils};
+use crate::{archive, desktop, icons, security, updates, utils};
 
 /// A completed installation, retained by the UI for launch/open/uninstall actions.
 #[derive(Clone, Debug)]
@@ -49,8 +49,13 @@ pub fn install(source: &Path, choice: ExistingChoice, selected_launcher: Option<
     log.push(format!("Selected launcher: {}", executable.display()));
     // Metadata is accepted only from a desktop entry that names the selected, validated launcher.
     let metadata = best_desktop_metadata(&extracted_root, &executable)?;
-    let fallback_name = extracted_root.file_name().and_then(|n| n.to_str()).map(utils::sanitize_name).filter(|n| n != "Application").unwrap_or(base_name);
-    let name = metadata.as_ref().and_then(|metadata| metadata.name.as_deref()).map(utils::sanitize_name).filter(|name| name != "Application").unwrap_or(fallback_name);
+    // A valid package Name is authoritative. Otherwise build a readable label from the actual
+    // launcher (rather than leaking filenames such as `tor-browser` into Plasma's UI).
+    let raw_executable_name = executable.file_stem().and_then(|name| name.to_str()).unwrap_or_default();
+    let generated_name = utils::pretty_name(raw_executable_name);
+    let fallback_name = if generated_name.is_empty() { utils::pretty_name(&base_name) } else { generated_name };
+    let raw_fallback = if raw_executable_name.is_empty() { base_name } else { raw_executable_name.to_owned() };
+    let name = metadata.as_ref().and_then(|metadata| metadata.name.as_deref()).map(str::trim).filter(|name| !name.is_empty()).map(str::to_owned).unwrap_or_else(|| if fallback_name.is_empty() { raw_fallback } else { fallback_name });
     let directory = destination_for(&applications, &name, choice)?;
     if choice == ExistingChoice::Cancel { bail!("Installation cancelled") }
     if directory.exists() && choice == ExistingChoice::Replace {
@@ -74,10 +79,13 @@ pub fn install(source: &Path, choice: ExistingChoice, selected_launcher: Option<
     };
     let categories = metadata.as_ref().and_then(|metadata| metadata.categories.as_deref()).map(str::to_owned).unwrap_or_else(|| infer_categories(&name));
     log.push("Generating desktop launcher…".into());
-    let desktop_file = desktop::write(desktop::DesktopEntry { name: &name, comment: metadata.as_ref().and_then(|metadata| metadata.comment.as_deref()), executable: &final_executable, icon: icon.as_deref(), categories: &categories, terminal: metadata.as_ref().and_then(|metadata| metadata.terminal).unwrap_or(false), startup_wm_class: metadata.as_ref().and_then(|metadata| metadata.startup_wm_class.as_deref()), mime_type: metadata.as_ref().and_then(|metadata| metadata.mime_type.as_deref()), id: &id })?;
+    let desktop_file = desktop::write(desktop::DesktopEntry { name: &name, comment: metadata.as_ref().and_then(|metadata| metadata.comment.as_deref()), executable: &final_executable, icon: icon.as_deref(), categories: &categories, terminal: metadata.as_ref().and_then(|metadata| metadata.terminal).unwrap_or(false), startup_notify: metadata.as_ref().and_then(|metadata| metadata.startup_notify).unwrap_or(false), startup_wm_class: metadata.as_ref().and_then(|metadata| metadata.startup_wm_class.as_deref()), mime_type: metadata.as_ref().and_then(|metadata| metadata.mime_type.as_deref()), id: &id })?;
     desktop::refresh_integrations();
     log.push("Done. KDE’s application launcher should now find the application.".into());
-    Ok(InstallResult::Installed(InstalledApp { name, directory, executable: final_executable, desktop_file, icon, sha256: hash }))
+    let installed = InstalledApp { name, directory, executable: final_executable, desktop_file, icon, sha256: hash };
+    // Persistence remains owned by the update module; the installer reports its completed result.
+    updates::record_install(&installed, source).context("could not record installed application")?;
+    Ok(InstallResult::Installed(installed))
 }
 
 /// Chooses the nearest desktop entry whose safe Exec target equals the selected launcher.
@@ -227,5 +235,7 @@ pub fn uninstall(app: &InstalledApp) -> Result<()> {
         let icon_root = dirs::data_local_dir().unwrap_or_default().join("icons").join("TarDrop");
         if icon.parent() == Some(icon_root.as_path()) && icon.exists() { fs::remove_file(icon)?; }
     }
-    desktop::refresh_integrations(); Ok(())
+    desktop::refresh_integrations();
+    updates::record_removal(&app.directory).context("application files were removed, but database cleanup failed")?;
+    Ok(())
 }
