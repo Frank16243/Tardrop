@@ -11,7 +11,7 @@ Existing installations are either replaced, given a separate numbered directory,
 ## Requirements
 
 * GNU/Linux on x86_64
-* Rust stable (edition 2024 or higher)
+* Rust stable (edition 2024)
 * A working Wayland or X11 session
 * A desktop opener (`xdg-open`) for the optional **Open folder** button
 * `update-desktop-database` is optional; Plasma also discovers the user launcher directory directly
