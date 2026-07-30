@@ -10,6 +10,7 @@ mod icons;
 mod installer;
 mod security;
 mod ui;
+mod updates;
 mod utils;
 
 use ui::TarDropApp;

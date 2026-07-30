@@ -4,7 +4,7 @@ use std::{collections::BTreeMap, fs, path::{Component, Path, PathBuf}};
 use anyhow::{bail, Context, Result};
 use tempfile::Builder;
 use walkdir::WalkDir;
-use crate::{archive, desktop, icons, security, utils};
+use crate::{archive, desktop, icons, security, updates, utils};
 
 /// A completed installation, retained by the UI for launch/open/uninstall actions.
 #[derive(Clone, Debug)]
@@ -77,7 +77,10 @@ pub fn install(source: &Path, choice: ExistingChoice, selected_launcher: Option<
     let desktop_file = desktop::write(desktop::DesktopEntry { name: &name, comment: metadata.as_ref().and_then(|metadata| metadata.comment.as_deref()), executable: &final_executable, icon: icon.as_deref(), categories: &categories, terminal: metadata.as_ref().and_then(|metadata| metadata.terminal).unwrap_or(false), startup_wm_class: metadata.as_ref().and_then(|metadata| metadata.startup_wm_class.as_deref()), mime_type: metadata.as_ref().and_then(|metadata| metadata.mime_type.as_deref()), id: &id })?;
     desktop::refresh_integrations();
     log.push("Done. KDE’s application launcher should now find the application.".into());
-    Ok(InstallResult::Installed(InstalledApp { name, directory, executable: final_executable, desktop_file, icon, sha256: hash }))
+    let installed = InstalledApp { name, directory, executable: final_executable, desktop_file, icon, sha256: hash };
+    // The update subsystem owns persistence; the installer only reports a completed transaction.
+    updates::record_install(&installed, source).context("could not record installed application")?;
+    Ok(InstallResult::Installed(installed))
 }
 
 /// Chooses the nearest desktop entry whose safe Exec target equals the selected launcher.
@@ -227,5 +230,7 @@ pub fn uninstall(app: &InstalledApp) -> Result<()> {
         let icon_root = dirs::data_local_dir().unwrap_or_default().join("icons").join("TarDrop");
         if icon.parent() == Some(icon_root.as_path()) && icon.exists() { fs::remove_file(icon)?; }
     }
-    desktop::refresh_integrations(); Ok(())
+    desktop::refresh_integrations();
+    updates::record_removal(&app.directory).context("application files were removed, but database cleanup failed")?;
+    Ok(())
 }

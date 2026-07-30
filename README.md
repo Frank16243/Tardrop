@@ -36,6 +36,15 @@ For development, use `cargo run`. Cargo downloads the Rust dependencies on the f
 * `desktop`: writes the per-user launcher and asks the desktop database to refresh.
 * `ui`: drag-and-drop, queueing, dialogs, progress display, log, launch, and uninstall controls.
 * `utils`: bounded user-directory and naming helpers.
+* `updates`: JSON-backed installed-app records, update preferences, providers, and rollback-safe updates.
+
+## Updates
+
+TarDrop records each successful install in `~/.local/share/tardrop/installed-apps.json`, including its install and desktop paths, detected version, archive name, provider configuration, and check timestamps. The database is human-readable and atomically replaced on changes.
+
+The built-in providers are GitHub Releases, Static URL, Website endpoint, and Manual. New providers implement the small `UpdateProvider` trait, without changing installer code. Applications installed from a local archive default to **Manual** because TarDrop never invents a network source. Provider configuration is stored in each record’s `source_url` and `custom_metadata`; this makes it possible to import or manage sources without trusting archive content.
+
+An update is only downloaded after the user presses **Update**. TarDrop moves the existing application to a private rollback location, invokes the normal archive validation/install path, preserves the established launcher, icon, and root permissions, and restores the old application if validation or installation fails. For safety, version detection does not automatically execute `--version`; it uses desktop metadata, version files, archive filenames, and provider release metadata.
 
 ## Notes
 
