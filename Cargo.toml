@@ -1,0 +1,29 @@
+[package]
+name = "tardrop"
+version = "0.1.0"
+edition = "2024"
+description = "A safe, user-local installer for portable application archives"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+# eframe provides a cross-desktop native window and drag-and-drop without a GTK/Qt system dependency.
+eframe = { version = "0.32", default-features = true }
+# rfd uses desktop file dialogs (including the XDG portal on KDE Wayland).
+rfd = "0.16"
+anyhow = "1.0"
+thiserror = "2.0"
+# Archive readers used by the format-specific, path-validated extractors.
+tar = "0.4"
+flate2 = "1.1"
+xz2 = "0.1"
+bzip2 = "0.6"
+zip = { version = "5.1", default-features = false, features = ["deflate", "bzip2", "xz", "zstd", "aes-crypto"] }
+walkdir = "2.5"
+dirs = "6.0"
+sha2 = "0.10"
+tempfile = "3.23"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
